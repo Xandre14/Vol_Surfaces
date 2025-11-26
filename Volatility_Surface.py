@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[18]:
+# In[9]:
 
 
 import numpy as np
@@ -17,31 +17,35 @@ def call_price_BS(sigma,S,T,K,r):
     return max(C,0)
 
 
-def find_call_vol(C,S,T,K,r,error, max_NR_iterations=50, B_iterations=4):
-    sigma = 2
-    CS = call_price_BS(sigma,S,T,K,r)
-    iterations = 0
+def find_call_vol(C,S,T,K,r,error, max_NR_iterations=20, B_iterations=4):
+    
     ex = 0
+    iterations = 0
     
     L = 0
-    U = 15
+    U = 5
     CL = max(0,S-K)
     CU = call_price_BS(U,S,T,K,r)
-    
+
+    #Sanity Check
     if C < CL or C > CU:
         return pd.NA
-        
+
+    #Bisection Iterations
     for i in range(B_iterations):
         M = ( L + U ) / 2
-        CM = call_price_BS(M,S,T,K,r)
+        CS = call_price_BS(M,S,T,K,r)
 
-        if C == CM:
+        if C == CS:
             return M
-        if C < CM:
+        if C < CS:
             U = M
-        if C > CM:
+        if C > CS:
             L = M
-        
+
+    sigma = ( L + U ) / 2
+
+    #Newton Raphson for specificity
     while np.abs(CS - C) > error and iterations < max_NR_iterations:
         d1 = (np.log(S/K)+(r+(sigma**2)/2)*T)/(sigma*np.sqrt(T))
         vega = S*norm.pdf(d1)*np.sqrt(T)
@@ -68,31 +72,35 @@ def put_price_BS(sigma,S,T,K,r):
     return P
 
 
-def find_put_vol(P,S,T,K,r,error, max_NR_iterations=50, B_iterations=4):
-    sigma = 0.5
-    PS = put_price_BS(sigma,S,T,K,r)
-    iterations = 0
+def find_put_vol(P,S,T,K,r,error, max_NR_iterations=20, B_iterations=4):
+
     ex = 0
+    iterations = 0
 
     L = 0
-    U = 15
+    U = 5
     PL = max(0,S-K)
     PU = put_price_BS(U,S,T,K,r)
-    
+
+    #Sanity Check
     if P < PL or P > PU:
         return pd.NA
 
+    #Bisection Iterations
     for i in range(B_iterations):
         M = ( L + U ) / 2
-        PM = put_price_BS(M,S,T,K,r)
+        PS = put_price_BS(M,S,T,K,r)
         
-        if P == PM:
+        if P == PS:
             return M
-        if P < PM:
+        if P < PS:
             U = M
-        if P > PM:
+        if P > PS:
             L = M
-        
+
+    sigma = ( L + U ) / 2
+
+    #Newton Raphson for specificity
     while np.abs(PS - P) > error and iterations < max_NR_iterations:
         d1 = (np.log(S/K)+(r+(sigma**2)/2)*T)/(sigma*np.sqrt(T))
         vega = S*norm.pdf(d1)*np.sqrt(T)
@@ -112,10 +120,8 @@ def find_put_vol(P,S,T,K,r,error, max_NR_iterations=50, B_iterations=4):
     return sigma
 
 
-    
 
-
-# In[5]:
+# In[2]:
 
 
 import yfinance as yf
@@ -167,8 +173,6 @@ options_now = options_now[options_now["tau"] > 2/365]
 options_now = options_now[options_now["ask"] != 0]
 
 
-options_now
-
 
 # In[17]:
 
@@ -179,10 +183,10 @@ def f(row):
     if pd.isna(row["volume"]) or row["volume"] < 1:
         return pd.NA
     elif row["option_type"] == "call":
-        sigma = find_call_vol(C=(row["ask"]+row["bid"])/2,S=row["spot_close"],T=row["tau"],K=row["strike"],r=row["rf_rate"],error=err*(row["ask"]+row["bid"])/2, max_NR_iterations=50, B_iterations=4)
+        sigma = find_call_vol(C=(row["ask"]+row["bid"])/2,S=row["spot_close"],T=row["tau"],K=row["strike"],r=row["rf_rate"],error=err*(row["ask"]+row["bid"])/2)
         return sigma
     elif row["option_type"] == "put":
-        sigma = find_put_vol(P=(row["ask"]+row["bid"])/2,S=row["spot_close"],T=row["tau"],K=row["strike"],r=row["rf_rate"],error=err*(row["ask"]+row["bid"])/2, max_NR_iterations=50, B_iterations=4)
+        sigma = find_put_vol(P=(row["ask"]+row["bid"])/2,S=row["spot_close"],T=row["tau"],K=row["strike"],r=row["rf_rate"],error=err*(row["ask"]+row["bid"])/2)
         return sigma
     else:
         return pd.NA
@@ -204,60 +208,45 @@ options_now["CalVP"] = options_now.apply(g,axis=1)
 options_now = options_now.dropna(subset=["tau", "strike", "CalVol"]).copy()
 
 
-options_now
     
 
 
-# In[19]:
+# In[25]:
 
 
 from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.pyplot as plt
 from matplotlib import cm
-from scipy import ndimage
+import numpy as np
+from scipy.interpolate import Rbf
+
+
+df = options_now.copy()
+df["CalVol"] = df["CalVol"].astype(float)
+mask = df["CalVol"].notna()
+X = df.loc[mask, "tau"].to_numpy()
+Y = df.loc[mask, "strike"].to_numpy()
+Z = df.loc[mask, "CalVol"].to_numpy()
 
 
 nx, ny = 50, 50
-
-X = options_now["tau"].to_numpy()
-Y = options_now["strike"].to_numpy()
-
-
 xi = np.linspace(X.min(), X.max(), nx)
 yi = np.linspace(Y.min(), Y.max(), ny)
-Xi, Yi = np.meshgrid(xi, yi)           
-X_win = (xi[1] - xi[0])/2     
-Y_win = (yi[1] - yi[0])/2       
+Xi, Yi = np.meshgrid(xi, yi)
+
+# RBF interpolator with smoothing
+rbf = Rbf(
+    X, Y, Z,
+    function="gaussian", 
+    epsilon=0.2,              
+    smooth=0.01,              
+)
+
+Zi = rbf(Xi, Yi)
 
 
-Zi = np.full((ny, nx), np.nan, dtype=float)
 
-
-for i in range(ny):         
-    for j in range(nx):     
-        x0 = Xi[i, j]        
-        y0 = Yi[i, j]
-        X_win_mult = 1
-        Y_win_mult = 1
-        
-        while True:
-            mask = (
-            options_now["tau"].between(x0 - X_win_mult*X_win, x0 + X_win_mult*X_win, inclusive="both")
-            & options_now["strike"].between(y0 - Y_win_mult*Y_win, y0 + Y_win_mult*Y_win, inclusive="both")
-            )
-            if int(mask.sum()) > 2:
-                Zi[i, j] = options_now.loc[mask, "CalVol"].median()
-                break
-            elif X_win_mult > nx or Y_win_mult > ny:
-                break
-            else:
-                X_win_mult +=1
-                Y_win_mult +=1
-                
-
-
-Zi = ndimage.gaussian_filter(Zi, sigma=2)
-
+# In[26]:
 
 
 fig = plt.figure(figsize=(12, 5))
@@ -265,13 +254,13 @@ fig = plt.figure(figsize=(12, 5))
 
 
 ax2 = fig.add_subplot(111, projection="3d")
-surf = ax2.plot_surface(Xi, Yi, np.ma.masked_invalid(Zi), linewidth=0, antialiased=False, cmap=cm.viridis)
+surf = ax2.plot_surface(Xi, Yi, Zi_smooth, linewidth=0, antialiased=False, cmap=cm.viridis)
 ax2.set_xlabel("time to expiry (years)")
 ax2.set_ylabel("Strike")
 ax2.set_zlabel("IV")
 ax2.set_title("Implied Volatility " + UNDERLYING)
 
-ax2.view_init(azim=60)
+ax2.view_init(azim=-30)
 
 fig.colorbar(surf, ax=ax2, shrink=0.70, pad=0.08, label="IV")
 
@@ -279,7 +268,6 @@ plt.tight_layout()
 plt.show()
 
 
-# In[ ]:
 
 
 
