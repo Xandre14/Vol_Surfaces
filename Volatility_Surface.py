@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[9]:
+# In[1]:
 
 
 import numpy as np
@@ -174,7 +174,7 @@ options_now = options_now[options_now["ask"] != 0]
 
 
 
-# In[17]:
+# In[3]:
 
 
 err = 0.001
@@ -211,7 +211,7 @@ options_now = options_now.dropna(subset=["tau", "strike", "CalVol"]).copy()
     
 
 
-# In[25]:
+# In[4]:
 
 
 from mpl_toolkits.mplot3d import Axes3D
@@ -246,7 +246,7 @@ Zi = rbf(Xi, Yi)
 
 
 
-# In[26]:
+# In[5]:
 
 
 fig = plt.figure(figsize=(12, 5))
